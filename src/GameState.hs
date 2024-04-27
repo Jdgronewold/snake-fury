@@ -1,12 +1,15 @@
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
 {-|
 This module defines the logic of the game and the communication with the `Board.RenderState`
 -}
-module GameState where 
+module GameState where
 
 -- These are all the import. Feel free to use more if needed.
 import RenderState (BoardInfo (..), Point, DeltaBoard)
 import qualified RenderState as Board
-import Data.Sequence ( Seq(..))
+import qualified RenderState (CellType(..))
+import Data.Sequence ( Seq(..), ViewR(..))
 import qualified Data.Sequence as S
 import System.Random ( uniformR, RandomGen(split), StdGen, Random (randomR))
 import Data.Maybe (isJust)
@@ -32,7 +35,11 @@ data GameState = GameState
 
 -- | This function should calculate the opposite movement.
 opositeMovement :: Movement -> Movement
-opositeMovement = undefined
+opositeMovement = \case
+  North -> South
+  South -> North
+  East -> West
+  West -> East
 
 -- >>> opositeMovement North == South
 -- >>> opositeMovement South == North
@@ -44,7 +51,10 @@ opositeMovement = undefined
 --   You should take a look to System.Random documentation. 
 --   Also, in the import list you have all relevant functions.
 makeRandomPoint :: BoardInfo -> StdGen -> (Point, StdGen)
-makeRandomPoint = undefined
+makeRandomPoint boardInfo gen =
+  let (x, gen') = randomR (1, width boardInfo) gen
+      (y, gen'') = randomR (1, height boardInfo) gen'
+   in ((x, y), gen'')
 
 {-
 We can't test makeRandomPoint, because different implementation may lead to different valid result.
@@ -52,8 +62,10 @@ We can't test makeRandomPoint, because different implementation may lead to diff
 
 
 -- | Check if a point is in the snake
-inSnake :: Point -> SnakeSeq  -> Bool
-inSnake = undefined
+inSnake :: Point -> SnakeSeq -> Bool
+inSnake point snek =
+  let snekBody = snakeBody snek
+   in point == snakeHead snek || isJust (point `S.elemIndexL` snekBody)
 
 {-
 This is a test for inSnake. It should return 
@@ -65,12 +77,25 @@ False
 -- >>> inSnake (1,1) snake_seq
 -- >>> inSnake (1,2) snake_seq
 -- >>> inSnake (1,4) snake_seq
+-- True
+-- True
+-- False
 
 -- | Calculates de new head of the snake. Considering it is moving in the current direction
 --   Take into acount the edges of the board
 nextHead :: BoardInfo -> GameState -> Point
-nextHead = undefined
-
+nextHead BoardInfo {..} GameState {..} =
+  let prevHead = snakeHead snakeSeq
+      (newHeight, newWidth) = case movement of
+        North -> (fst prevHead -1, snd prevHead)
+        South -> (fst prevHead + 1, snd prevHead)
+        East -> (fst prevHead, snd prevHead + 1)
+        West -> (fst prevHead, snd prevHead -1)
+      correctValue maxV v
+        | v < 1 = maxV
+        | v > maxV = 1
+        | otherwise = v
+    in (correctValue height newHeight, correctValue width newWidth)
 {-
 This is a test for nextHead. It should return
 True
@@ -86,11 +111,21 @@ True
 -- >>> nextHead board_info game_state1 == (1,4)
 -- >>> nextHead board_info game_state2 == (2,1)
 -- >>> nextHead board_info game_state3 == (4,1)
+-- True
+-- True
+-- True
 
 
 -- | Calculates a new random apple, avoiding creating the apple in the same place, or in the snake body
 newApple :: BoardInfo -> GameState -> (Point, StdGen)
-newApple = undefined
+newApple board GameState {..} = 
+  let snekHead = snakeHead snakeSeq
+      snekBody = snakeBody snakeSeq
+      unallowedPositions = snekBody S.>< S.fromList [snekHead, applePosition]
+      (newPoint, newGen) = makeRandomPoint board randomGen
+    in case newPoint `S.elemIndexL` unallowedPositions of
+          Just _ -> newApple board GameState {randomGen = newGen, ..}
+          Nothing -> (newPoint, newGen)
 
 {- We can't test this function because it depends on makeRandomPoint -}
 
@@ -113,7 +148,31 @@ newApple = undefined
 -- 
 
 move :: BoardInfo -> GameState -> (Board.RenderMessage , GameState)
-move = undefined
+move board@BoardInfo {..} game@GameState {..} =
+  let newHead = nextHead board game
+      snekHead = snakeHead snakeSeq
+      snekBody = snakeBody snakeSeq
+  in case newHead == applePosition of
+    True ->
+       let (applePos', randGen') = newApple board game
+           snekBody' = snekHead S.<| snekBody
+           delta' = [ (newHead, Board.SnakeHead)
+                    , (applePos', Board.Apple)
+                    , (snekHead, Board.Snake)
+                    ]
+        in (Board.RenderBoard delta', GameState (SnakeSeq newHead snekBody') applePos' movement randGen')
+    False ->
+      let (snekTail, droppedPoint) = dropLast snekBody
+          snekBody' = snekHead S.<| snekTail
+          delta' = [ (newHead, Board.SnakeHead)
+                   , (snekHead, Board.Snake) 
+                   ] <> maybe [] (\p -> [(p, Board.Empty)]) droppedPoint
+      in (Board.RenderBoard delta', GameState (SnakeSeq newHead snekBody') applePosition movement randomGen)
+      
+dropLast :: Seq a -> (Seq a, Maybe a)
+dropLast s = case S.viewr s of
+    EmptyR   -> (S.empty, Nothing)  -- Handles the case where the sequence is already empty
+    s' :> x -> (s', Just x)          -- s' is the sequence without the last element
 
 {- This is a test for move. It should return
 
@@ -132,3 +191,6 @@ RenderBoard [((4,1),SnakeHead),((1,1),Snake),((1,3),Empty)]
 -- >>> fst $ move board_info game_state1
 -- >>> fst $ move board_info game_state2
 -- >>> fst $ move board_info game_state3
+-- RenderBoard [((1,4),SnakeHead),((1,1),Snake),((1,3),Empty)]
+-- RenderBoard [((2,1),SnakeHead),((2,4),Apple),((1,1),Snake)]
+-- RenderBoard [((4,1),SnakeHead),((1,1),Snake),((1,3),Empty)]
