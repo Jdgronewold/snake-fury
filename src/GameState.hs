@@ -6,12 +6,11 @@ This module defines the logic of the game and the communication with the `Board.
 module GameState where
 
 -- These are all the import. Feel free to use more if needed.
-import RenderState (BoardInfo (..), Point, DeltaBoard)
+import RenderState (BoardInfo (..), Point)
 import qualified RenderState as Board
-import qualified RenderState (CellType(..))
 import Data.Sequence ( Seq(..), ViewR(..))
 import qualified Data.Sequence as S
-import System.Random ( uniformR, RandomGen(split), StdGen, Random (randomR))
+import System.Random ( StdGen, Random (randomR))
 import Data.Maybe (isJust)
 
 -- The movement is one of this.
@@ -148,7 +147,7 @@ newApple board GameState {..} =
 -- 
 
 move :: BoardInfo -> GameState -> (Board.RenderMessage , GameState)
-move board@BoardInfo {..} game@GameState {..} =
+move board game@GameState {..} =
   let newHead = nextHead board game
       snekHead = snakeHead snakeSeq
       snekBody = snakeBody snakeSeq
