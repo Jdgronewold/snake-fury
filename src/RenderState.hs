@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 {-|
 This module defines the board. A board is an array of CellType elements indexed by a tuple of ints: the height and width.
@@ -43,10 +44,17 @@ type DeltaBoard = [(Point, CellType)]
 -- | The render message represent all message the GameState can send to the RenderState
 --   Right now Possible messages are a RenderBoard with a payload indicating which cells change
 --   or a GameOver message.
-data RenderMessage = RenderBoard DeltaBoard | GameOver deriving Show
+data RenderMessage
+  =
+    RenderBoard DeltaBoard
+  |
+    GameOver
+  |
+    UpdateScore
+  deriving Show
 
 -- | The RenderState contains the board and if the game is over or not.
-data RenderState   = RenderState {board :: Board, gameOver :: Bool} deriving Show
+data RenderState   = RenderState {board :: Board, gameOver :: Bool, score :: Int} deriving Show
 
 -- | Given The board info, this function should return a board with all Empty cells
 emptyGrid :: BoardInfo -> Board
@@ -68,7 +76,12 @@ buildInitialBoard
   -> Point     -- ^ initial Point of the apple
   -> RenderState
 buildInitialBoard BoardInfo {..} snekPoint applePoint =
-    RenderState {board = emptyGrid BoardInfo {..} // [(snekPoint, SnakeHead), (applePoint, Apple)], gameOver = False}
+    RenderState
+      {
+        board = emptyGrid BoardInfo {..} // [(snekPoint, SnakeHead), (applePoint, Apple)]
+      , gameOver = False
+      , score = 0
+      }
 
 {- 
 This is a test for buildInitialBoard. It should return 
@@ -80,9 +93,14 @@ RenderState {board = array ((1,1),(2,2)) [((1,1),SnakeHead),((1,2),Empty),((2,1)
 
 -- | Given tye current render state, and a message -> update the render state
 updateRenderState :: RenderState -> RenderMessage -> RenderState
-updateRenderState state message = case message of
+updateRenderState state message =  case message of
     RenderBoard delta -> state {board = board state // delta}
     GameOver -> state {gameOver = True}
+    UpdateScore -> state { score = score state + 1 }
+
+-- | takes the old state, applies a list of renderMessages to it, each time returning a new renderState
+updateMessages :: RenderState -> [RenderMessage] -> RenderState
+updateMessages = foldl updateRenderState
 
 {-
 This is a test for updateRenderState
@@ -123,10 +141,11 @@ ppCell = \case
 render :: BoardInfo -> RenderState -> String
 render BoardInfo {..} RenderState {..} = do
   let values = [renderCharacter (board ! (x,y)) (y == width) | x <- [1..height], y <- [1..width] ]
-  intercalate "" values
+      newScore = "Score: " ++ show score ++ "\n"
+  newScore ++ intercalate "" values
   where
-    renderCharacter cellType addNewLine = 
-      if gameOver then "X " 
+    renderCharacter cellType addNewLine =
+      if gameOver then "X "
       else ppCell cellType ++ (if addNewLine then "\n" else "")
 
 

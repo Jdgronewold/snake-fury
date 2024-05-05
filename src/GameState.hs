@@ -146,7 +146,7 @@ newApple board GameState {..} =
 -- We need to send the following delta: [((2,2), Apple), ((4,3), Snake), ((4,4), SnakeHead)]
 -- 
 
-move :: BoardInfo -> GameState -> (Board.RenderMessage , GameState)
+move :: BoardInfo -> GameState -> ([Board.RenderMessage] , GameState)
 move board game@GameState {..} =
   let newHead = nextHead board game
       snekHead = snakeHead snakeSeq
@@ -159,14 +159,14 @@ move board game@GameState {..} =
                     , (applePos', Board.Apple)
                     , (snekHead, Board.Snake)
                     ]
-        in (Board.RenderBoard delta', GameState (SnakeSeq newHead snekBody') applePos' movement randGen')
+        in ([Board.RenderBoard delta', Board.UpdateScore], GameState (SnakeSeq newHead snekBody') applePos' movement randGen')
     False ->
       let (snekTail, droppedPoint) = dropLast snekBody
           snekBody' = snekHead S.<| snekTail
           delta' = [ (newHead, Board.SnakeHead)
                    , (snekHead, Board.Snake) 
                    ] <> maybe [] (\p -> [(p, Board.Empty)]) droppedPoint
-      in (Board.RenderBoard delta', GameState (SnakeSeq newHead snekBody') applePosition movement randomGen)
+      in ([Board.RenderBoard delta'], GameState (SnakeSeq newHead snekBody') applePosition movement randomGen)
       
 dropLast :: Seq a -> (Seq a, Maybe a)
 dropLast s = case S.viewr s of
