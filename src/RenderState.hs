@@ -26,6 +26,7 @@ module RenderState where
 -- This are all imports you need. Feel free to import more things.
 import Data.Array ( (//), listArray, Array, (!))
 import Data.List (intercalate)
+import Data.ByteString.Builder (Builder, stringUtf8, intDec)
 
 -- A point is just a tuple of integers.
 type Point = (Int, Int)
@@ -135,14 +136,27 @@ ppCell = \case
   SnakeHead -> "S "
   Apple -> "X "
 
+ppScore :: Int -> Builder
+ppScore s = 
+  let 
+  asteriskLine = stringUtf8 "**********\n"
+  in mconcat [ asteriskLine
+  , stringUtf8 "Score: "
+  , intDec s
+  , stringUtf8 "\n"
+  , asteriskLine
+  ]
+  
+
+
 
 -- | convert the RenderState in a String ready to be flushed into the console.
 --   It should return the Board with a pretty look. If game over, return the empty board.
 render :: BoardInfo -> RenderState -> String
 render BoardInfo {..} RenderState {..} = do
   let values = [renderCharacter (board ! (x,y)) (y == width) | x <- [1..height], y <- [1..width] ]
-      newScore = "Score: " ++ show score ++ "\n"
-  newScore ++ intercalate "" values
+      -- newScore = "Score: " ++ show score ++ "\n"
+  intercalate "" values
   where
     renderCharacter cellType addNewLine =
       if gameOver then "X "

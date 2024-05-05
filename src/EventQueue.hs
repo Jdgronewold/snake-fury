@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeApplications #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 {- |
 This module handle the external events of the game. That is: the user inputs and the time.

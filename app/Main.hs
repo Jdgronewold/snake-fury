@@ -15,10 +15,13 @@ import EventQueue (
  )
 import GameState (GameState (movement), move, opositeMovement)
 import Initialization (gameInitialization)
-import RenderState (BoardInfo, RenderState (gameOver, score), render, updateMessages)
+import RenderState (BoardInfo, RenderState (gameOver, score), render, updateMessages, ppScore)
 import System.Environment (getArgs)
 import System.IO (BufferMode (NoBuffering), hSetBinaryMode, hSetBuffering, hSetEcho, stdin, stdout)
 import Control.Monad (unless)
+import Data.ByteString.Builder (toLazyByteString )
+import qualified Data.ByteString.Char8 as B
+
 
 -- The game loop is easy:
 --   - wait some time
@@ -40,7 +43,10 @@ gameloop binf gstate rstate queue = do
               else move binf $ gstate{movement = m}
   let rstate' = updateMessages rstate delta
       isGameOver = gameOver rstate'
+      newScore = score rstate'
+      boop = toLazyByteString  $ ppScore newScore
   putStr "\ESC[2J" --This cleans the console screen
+  B.putStr $ B.toStrict boop
   putStr $ render binf rstate'
   unless isGameOver $ gameloop binf gstate' rstate' queue
 
