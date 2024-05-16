@@ -12,7 +12,7 @@ import Data.Sequence ( Seq(..), ViewR(..))
 import qualified Data.Sequence as S
 import System.Random ( StdGen, Random (randomR))
 import Data.Maybe (isJust)
-import Control.Monad.Trans.State.Strict (State, get, put, modify, gets, runState)
+import Control.Monad.Trans.State.Strict (State, get, put, modify, runState)
 
 -- The movement is one of this.
 data Movement = North | South | East | West deriving (Show, Eq)
@@ -139,33 +139,36 @@ True
 -- | Calculates a new random apple, avoiding creating the apple in the same place, or in the snake body
 newApple :: BoardInfo -> GameStep Point
 newApple board = do
-  game@GameState {..} <- get
+  GameState {..} <- get
+  newPoint <- makeRandomPoint board
   let snekHead = snakeHead snakeSeq
       snekBody = snakeBody snakeSeq
       unallowedPositions = snekBody S.>< S.fromList [snekHead, applePosition]
-      (newPoint, newGame) = makeRandomPoint board game
-    in case newPoint `S.elemIndexL` unallowedPositions of
-          Just _ -> newApple board newGame
-          Nothing -> (newPoint, newGame { applePosition = newPoint})
+  if newPoint `elem` unallowedPositions then do
+    newApple board
+  else do
+    modify (\oldState -> oldState {applePosition = newPoint})
+    pure newPoint
 
 -- Add a point to the snake head
-extendSnake :: Point -> BoardInfo -> GameState -> (Board.DeltaBoard, GameState)
-extendSnake point board game@GameState {..} =
-  let (applePos', newGame) = newApple board game
-      snekHead = snakeHead snakeSeq
+extendSnake :: Point -> BoardInfo -> GameStep Board.DeltaBoard
+extendSnake point board = do
+  GameState {..} <- get
+  applePos' <- newApple board
+  let snekHead = snakeHead snakeSeq
       snekBody = snakeBody snakeSeq
       snekBody' = snekHead S.<| snekBody
       delta' = [ (point, Board.SnakeHead)
                 , (applePos', Board.Apple)
                 , (snekHead, Board.Snake)
                 ]
-  in (
-    delta', 
-    newGame {snakeSeq = SnakeSeq point snekBody'}
-    )
+  modify (\oldState -> oldState {snakeSeq = SnakeSeq point snekBody'})              
+  pure delta'
+    
 
-displaceSnake :: Point -> BoardInfo -> GameState -> (Board.DeltaBoard, GameState)
-displaceSnake point _ game@GameState {..} =
+displaceSnake :: Point -> BoardInfo -> GameStep Board.DeltaBoard
+displaceSnake point _  = do
+  GameState {..} <- get
   let snekHead = snakeHead snakeSeq
       snekBody = snakeBody snakeSeq
       (snekTail, droppedPoint) = dropLast snekBody
@@ -173,7 +176,8 @@ displaceSnake point _ game@GameState {..} =
       delta' = [ (point, Board.SnakeHead)
               , (snekHead, Board.Snake) 
               ] <> maybe [] (\p -> [(p, Board.Empty)]) droppedPoint
-  in (delta', game { snakeSeq = SnakeSeq point snekBody' })
+  modify (\oldState -> oldState {snakeSeq = SnakeSeq point snekBody'})
+  pure delta'
 
 {- We can't test this function because it depends on makeRandomPoint -}
 
@@ -195,19 +199,21 @@ displaceSnake point _ game@GameState {..} =
 -- We need to send the following delta: [((2,2), Apple), ((4,3), Snake), ((4,4), SnakeHead)]
 -- 
 
-move :: BoardInfo -> GameState -> ([Board.RenderMessage] , GameState)
-move board game@GameState {..} =
-  let newHead = nextHead board game
-  in case newHead == applePosition of
-    True ->
-      let (delta', newGame) = extendSnake newHead board game
-      in (
-        [Board.RenderBoard delta', Board.UpdateScore], 
-        newGame
-        )
-    False ->
-      let (delta', newGame) = displaceSnake newHead board game
-      in ([Board.RenderBoard delta'], newGame)
+step :: BoardInfo -> GameStep [Board.RenderMessage]
+step board = do
+  GameState {..} <- get
+  newHead <- nextHead board
+  if newHead == applePosition then do
+    delta' <- extendSnake newHead board
+    pure [Board.RenderBoard delta', Board.UpdateScore]
+  else do
+    delta' <- displaceSnake newHead board
+    pure [Board.RenderBoard delta']
+
+
+move :: BoardInfo -> GameState -> ([Board.RenderMessage], GameState)
+move board = runState (step board) 
+
       
 dropLast :: Seq a -> (Seq a, Maybe a)
 dropLast s = case S.viewr s of
