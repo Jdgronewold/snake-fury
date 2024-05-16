@@ -148,8 +148,6 @@ ppScore s =
   ]
   
 
-
-
 -- | convert the RenderState in a String ready to be flushed into the console.
 --   It should return the Board with a pretty look. If game over, return the empty board.
 render :: BoardInfo -> RenderState -> String
