@@ -13,6 +13,8 @@ import qualified Data.Sequence as S
 import System.Random ( StdGen, Random (randomR))
 import Data.Maybe (isJust)
 import Control.Monad.Trans.State.Strict (State, get, put, modify, runState)
+import Control.Monad.Trans.Reader (ReaderT (runReaderT), ask)
+import Control.Monad.Trans.Class ( MonadTrans(lift) )
 
 -- The movement is one of this.
 data Movement = North | South | East | West deriving (Show, Eq)
@@ -33,7 +35,7 @@ data GameState = GameState
   }
   deriving (Show, Eq)
 
-type GameStep a = State GameState a
+type GameStep a = ReaderT BoardInfo (State GameState) a
 
 -- | This function should calculate the opposite movement.
 opositeMovement :: Movement -> Movement
@@ -58,13 +60,24 @@ opositeMovement = \case
 --       (y, gen'') = randomR (1, height boardInfo) gen'
 --    in ((x, y), gen'')
 
-makeRandomPoint :: BoardInfo -> GameStep Point
-makeRandomPoint BoardInfo {..} = do
-  game@GameState {..} <- get 
+makeRandomPoint :: GameStep Point
+makeRandomPoint  = do
+  BoardInfo {..} <- ask
+  game@GameState {..} <- lift get 
   let (x, gen') = randomR (1, width) randomGen
       (y, gen'') = randomR (1, height) gen'
-  put $ game { randomGen = gen''}
+  _ <- lift . put $ game { randomGen = gen''}
   pure (x, y)
+
+-- without do notation
+makeRandomPoint' ::  GameStep Point
+makeRandomPoint'  =
+  ask >>= \BoardInfo {..} -> lift get >>= \game@GameState {..} ->
+  let (x, gen') = randomR (1, width) randomGen
+      (y, gen'') = randomR (1, height) gen'
+  in (lift . put) (game { randomGen = gen''})
+    >> pure (x,y)
+
 {-
 We can't test makeRandomPoint, because different implementation may lead to different valid result.
 -}
@@ -92,9 +105,10 @@ False
 
 -- | Calculates de new head of the snake. Considering it is moving in the current direction
 --   Take into acount the edges of the board
-nextHead :: BoardInfo -> GameStep Point
-nextHead BoardInfo {..}  = do
-  GameState {..} <- get 
+nextHead :: GameStep Point
+nextHead = do
+  BoardInfo {..} <- ask
+  GameState {..} <- lift get 
   let prevHead = snakeHead snakeSeq  
       (newHeight, newWidth) = calculateNextPoint prevHead  movement 
   pure (correctValue height newHeight, correctValue width newWidth)
@@ -137,24 +151,24 @@ True
 
 
 -- | Calculates a new random apple, avoiding creating the apple in the same place, or in the snake body
-newApple :: BoardInfo -> GameStep Point
-newApple board = do
-  GameState {..} <- get
-  newPoint <- makeRandomPoint board
+newApple :: GameStep Point
+newApple = do
+  GameState {..} <- lift get
+  newPoint <- makeRandomPoint
   let snekHead = snakeHead snakeSeq
       snekBody = snakeBody snakeSeq
       unallowedPositions = snekBody S.>< S.fromList [snekHead, applePosition]
   if newPoint `elem` unallowedPositions then do
-    newApple board
+    newApple
   else do
-    modify (\oldState -> oldState {applePosition = newPoint})
+    _ <- (lift . modify) (\oldState -> oldState {applePosition = newPoint})
     pure newPoint
 
 -- Add a point to the snake head
-extendSnake :: Point -> BoardInfo -> GameStep Board.DeltaBoard
-extendSnake point board = do
-  GameState {..} <- get
-  applePos' <- newApple board
+extendSnake :: Point -> GameStep Board.DeltaBoard
+extendSnake point = do
+  GameState {..} <- lift get
+  applePos' <- newApple
   let snekHead = snakeHead snakeSeq
       snekBody = snakeBody snakeSeq
       snekBody' = snekHead S.<| snekBody
@@ -162,13 +176,13 @@ extendSnake point board = do
                 , (applePos', Board.Apple)
                 , (snekHead, Board.Snake)
                 ]
-  modify (\oldState -> oldState {snakeSeq = SnakeSeq point snekBody'})              
+  _ <- (lift . modify) (\oldState -> oldState {snakeSeq = SnakeSeq point snekBody'})              
   pure delta'
     
 
-displaceSnake :: Point -> BoardInfo -> GameStep Board.DeltaBoard
-displaceSnake point _  = do
-  GameState {..} <- get
+displaceSnake :: Point -> GameStep Board.DeltaBoard
+displaceSnake point = do
+  GameState {..} <- lift get
   let snekHead = snakeHead snakeSeq
       snekBody = snakeBody snakeSeq
       (snekTail, droppedPoint) = dropLast snekBody
@@ -176,7 +190,7 @@ displaceSnake point _  = do
       delta' = [ (point, Board.SnakeHead)
               , (snekHead, Board.Snake) 
               ] <> maybe [] (\p -> [(p, Board.Empty)]) droppedPoint
-  modify (\oldState -> oldState {snakeSeq = SnakeSeq point snekBody'})
+  _ <- (lift . modify) (\oldState -> oldState {snakeSeq = SnakeSeq point snekBody'})
   pure delta'
 
 {- We can't test this function because it depends on makeRandomPoint -}
@@ -199,20 +213,20 @@ displaceSnake point _  = do
 -- We need to send the following delta: [((2,2), Apple), ((4,3), Snake), ((4,4), SnakeHead)]
 -- 
 
-step :: BoardInfo -> GameStep [Board.RenderMessage]
-step board = do
-  GameState {..} <- get
-  newHead <- nextHead board
+step :: GameStep [Board.RenderMessage]
+step = do
+  GameState {..} <- lift get
+  newHead <- nextHead
   if newHead == applePosition then do
-    delta' <- extendSnake newHead board
+    delta' <- extendSnake newHead
     pure [Board.RenderBoard delta', Board.UpdateScore]
   else do
-    delta' <- displaceSnake newHead board
+    delta' <- displaceSnake newHead
     pure [Board.RenderBoard delta']
 
 
 move :: BoardInfo -> GameState -> ([Board.RenderMessage], GameState)
-move board = runState (step board) 
+move board =  runState (runReaderT step board) 
 
       
 dropLast :: Seq a -> (Seq a, Maybe a)
