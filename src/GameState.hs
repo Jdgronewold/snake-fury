@@ -247,7 +247,11 @@ step = do
 
 
 move :: Monad m => BoardInfo -> GameState -> m ([Board.RenderMessage], GameState)
-move board = runStateT (runReaderT step board)
+-- move board = runStateT (runReaderT step board)
+move board state = runReaderT (runStateT step state) board
+
+-- test :: ReaderT BoardInfo m ([RenderMessage], GameState) -> BoardInfo -> m ([RenderMessage], GameState)
+-- test :: ReaderT BoardInfo (StateT GameState m) [RenderMessage] -> BoardInfo -> StateT GameState m [RenderMessage]
 
 
 dropLast :: Seq a -> (Seq a, Maybe a)

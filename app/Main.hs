@@ -15,7 +15,7 @@ import EventQueue (
  )
 import GameState (GameState (movement), move, opositeMovement)
 import Initialization (gameInitialization)
-import RenderState (BoardInfo, RenderState (gameOver, score), render, updateMessages, ppScore)
+import RenderState (BoardInfo, RenderState (gameOver, score), render, ppScore)
 import System.Environment (getArgs)
 import System.IO (BufferMode (NoBuffering), hSetBinaryMode, hSetBuffering, hSetEcho, stdin, stdout)
 import Control.Monad (unless)
@@ -34,20 +34,20 @@ gameloop binf gstate rstate queue = do
   newSpeed <- setSpeed (score rstate) queue
   threadDelay newSpeed
   event <- readEvent queue
-  let (delta, gstate') =
+  (messages, gstate') <-
         case event of
           Tick -> move binf gstate
           UserEvent m ->
             if movement gstate == opositeMovement m
               then move binf gstate
               else move binf $ gstate{movement = m}
-  let rstate' = updateMessages rstate delta
-      isGameOver = gameOver rstate'
+  (builder, rstate') <- render messages binf rstate
+  let isGameOver = gameOver rstate'
       newScore = score rstate'
-      boop = toLazyByteString  $ ppScore newScore
+      formattedScore = toLazyByteString  $ ppScore newScore
   putStr "\ESC[2J" --This cleans the console screen
-  B.putStr $ B.toStrict boop
-  putStr $ render binf rstate'
+  B.putStr $ B.toStrict formattedScore
+  B.putStr $ (B.toStrict . toLazyByteString) builder
   unless isGameOver $ gameloop binf gstate' rstate' queue
 
 -- | main.

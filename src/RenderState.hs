@@ -29,7 +29,7 @@ import Data.Array ( (//), listArray, Array, (!))
 import Data.List (intercalate)
 import Data.ByteString.Builder (Builder, stringUtf8, intDec)
 import Control.Monad.Reader
-import Control.Monad.State (StateT, MonadState, put, get)
+import Control.Monad.State (StateT (..), MonadState, put, get)
 
 -- A point is just a tuple of integers.
 type Point = (Int, Int)
@@ -60,9 +60,9 @@ data RenderMessage
 -- | The RenderState contains the board and if the game is over or not.
 data RenderState   = RenderState {board :: Board, gameOver :: Bool, score :: Int} deriving Show
 
-newtype RenderStep m a = 
-  RenderStep {runRenderStep :: ReaderT BoardInfo (StateT RenderState m) a}
-  deriving (Functor, Applicative, Monad, MonadState RenderState, MonadReader BoardInfo) 
+-- newtype RenderStep m a = 
+--   RenderStep {runRenderStep :: ReaderT BoardInfo (StateT RenderState m) a}
+--   deriving (Functor, Applicative, Monad, MonadState RenderState, MonadReader BoardInfo) 
 
 -- | Given The board info, this function should return a board with all Empty cells
 emptyGrid :: BoardInfo -> Board
@@ -153,23 +153,30 @@ ppScore s =
   let 
   asteriskLine = stringUtf8 "**********\n"
   in mconcat [ asteriskLine
-  , stringUtf8 "Score: "
+  , "Score: "
   , intDec s
   , stringUtf8 "\n"
   , asteriskLine
   ]
   
+renderStep :: (MonadState RenderState m, MonadReader BoardInfo m) => [RenderMessage] -> m Builder
+renderStep messages = do
+  BoardInfo {..} <- ask
+  oldState <- get
+  updateMessages messages
+  newState <- get
+  let values = [renderCharacter (board oldState ! (x,y)) (y == width) | x <- [1..height], y <- [1..width] ]
+      renderCharacter cellType addNewLine =
+        if gameOver newState then "X "
+        else ppCell cellType ++ (if addNewLine then "\n" else "")
+  pure $ stringUtf8 $ intercalate "" values
 
 -- | convert the RenderState in a String ready to be flushed into the console.
 --   It should return the Board with a pretty look. If game over, return the empty board.
-render :: BoardInfo -> RenderState -> String
-render BoardInfo {..} RenderState {..} =
-  let values = [renderCharacter (board ! (x,y)) (y == width) | x <- [1..height], y <- [1..width] ]
-      renderCharacter cellType addNewLine =
-        if gameOver then "X "
-        else ppCell cellType ++ (if addNewLine then "\n" else "")
-      -- newScore = "Score: " ++ show score ++ "\n"
-  in intercalate "" values    
+-- render :: [RenderMessage] -> BoardInfo -> RenderState ->  (Builder, RenderState)
+render :: Monad m => [RenderMessage] -> BoardInfo -> RenderState -> m (Builder, RenderState)
+render messages board state = 
+  runReaderT (runStateT (renderStep messages) state) board  
 
 
 {-
