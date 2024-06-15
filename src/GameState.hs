@@ -17,6 +17,9 @@ import Data.Maybe (isJust)
 import Control.Monad.State.Strict (StateT (..), get, put, modify, MonadState)
 import Control.Monad.Reader (ReaderT (runReaderT, ReaderT), ask, MonadReader)
 
+-- | The are two kind of events, a `ClockEvent`, representing movement which is not force by the user input, and `UserEvent` which is the opposite.
+data Event = Tick | UserEvent Movement
+
 -- The movement is one of this.
 data Movement = North | South | East | West deriving (Show, Eq)
 
@@ -246,9 +249,16 @@ step = do
     pure [Board.RenderBoard delta']
 
 
-move :: Monad m => BoardInfo -> GameState -> m ([Board.RenderMessage], GameState)
+move :: Monad m => Event -> BoardInfo -> GameState -> m ([Board.RenderMessage], GameState)
 -- move board = runStateT (runReaderT step board)
-move board state = runReaderT (runStateT step state) board
+move event board state = case event of
+  Tick -> runReaderT (runStateT step state) board
+  UserEvent m ->
+    if movement state == opositeMovement m
+      then runReaderT (runStateT step state) board
+      else runReaderT (runStateT step state{movement = m}) board  
+  
+  
 
 -- test :: ReaderT BoardInfo m ([RenderMessage], GameState) -> BoardInfo -> m ([RenderMessage], GameState)
 -- test :: ReaderT BoardInfo (StateT GameState m) [RenderMessage] -> BoardInfo -> StateT GameState m [RenderMessage]

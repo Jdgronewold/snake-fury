@@ -7,13 +7,12 @@ import Control.Concurrent (
   threadDelay,
  )
 import EventQueue (
-  Event (Tick, UserEvent),
   EventQueue,
   readEvent,
   writeUserInput,
   setSpeed
  )
-import GameState (GameState (movement), move, opositeMovement)
+import GameState (GameState, move)
 import Initialization (gameInitialization)
 import RenderState (BoardInfo, RenderState (gameOver, score), render, ppScore)
 import System.Environment (getArgs)
@@ -34,13 +33,7 @@ gameloop binf gstate rstate queue = do
   newSpeed <- setSpeed (score rstate) queue
   threadDelay newSpeed
   event <- readEvent queue
-  (messages, gstate') <-
-        case event of
-          Tick -> move binf gstate
-          UserEvent m ->
-            if movement gstate == opositeMovement m
-              then move binf gstate
-              else move binf $ gstate{movement = m}
+  (messages, gstate') <- move event binf gstate
   (builder, rstate') <- render messages binf rstate
   let isGameOver = gameOver rstate'
       newScore = score rstate'
