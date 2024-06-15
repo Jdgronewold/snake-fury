@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 {-|
 This module defines the board. A board is an array of CellType elements indexed by a tuple of ints: the height and width.
@@ -27,6 +28,8 @@ module RenderState where
 import Data.Array ( (//), listArray, Array, (!))
 import Data.List (intercalate)
 import Data.ByteString.Builder (Builder, stringUtf8, intDec)
+import Control.Monad.Reader
+import Control.Monad.State (StateT, MonadState, put, get)
 
 -- A point is just a tuple of integers.
 type Point = (Int, Int)
@@ -56,6 +59,10 @@ data RenderMessage
 
 -- | The RenderState contains the board and if the game is over or not.
 data RenderState   = RenderState {board :: Board, gameOver :: Bool, score :: Int} deriving Show
+
+newtype RenderStep m a = 
+  RenderStep {runRenderStep :: ReaderT BoardInfo (StateT RenderState m) a}
+  deriving (Functor, Applicative, Monad, MonadState RenderState, MonadReader BoardInfo) 
 
 -- | Given The board info, this function should return a board with all Empty cells
 emptyGrid :: BoardInfo -> Board
@@ -93,15 +100,20 @@ RenderState {board = array ((1,1),(2,2)) [((1,1),SnakeHead),((1,2),Empty),((2,1)
 
 
 -- | Given tye current render state, and a message -> update the render state
-updateRenderState :: RenderState -> RenderMessage -> RenderState
-updateRenderState state message =  case message of
-    RenderBoard delta -> state {board = board state // delta}
-    GameOver -> state {gameOver = True}
-    UpdateScore -> state { score = score state + 1 }
+updateRenderState :: (MonadState RenderState m, MonadReader BoardInfo m) => RenderMessage -> m ()
+updateRenderState message = do 
+  oldState <- get
+  case message of
+    RenderBoard delta -> 
+      put $ oldState {board = board oldState // delta}
+    GameOver -> 
+      put $ oldState {gameOver = True}
+    UpdateScore -> 
+      put $ oldState { score = score oldState + 1 }
 
 -- | takes the old state, applies a list of renderMessages to it, each time returning a new renderState
-updateMessages :: RenderState -> [RenderMessage] -> RenderState
-updateMessages = foldl updateRenderState
+updateMessages ::  (MonadState RenderState m, MonadReader BoardInfo m) => [RenderMessage] -> m ()
+updateMessages = mapM_ updateRenderState
 
 {-
 This is a test for updateRenderState
@@ -151,14 +163,13 @@ ppScore s =
 -- | convert the RenderState in a String ready to be flushed into the console.
 --   It should return the Board with a pretty look. If game over, return the empty board.
 render :: BoardInfo -> RenderState -> String
-render BoardInfo {..} RenderState {..} = do
+render BoardInfo {..} RenderState {..} =
   let values = [renderCharacter (board ! (x,y)) (y == width) | x <- [1..height], y <- [1..width] ]
+      renderCharacter cellType addNewLine =
+        if gameOver then "X "
+        else ppCell cellType ++ (if addNewLine then "\n" else "")
       -- newScore = "Score: " ++ show score ++ "\n"
-  intercalate "" values
-  where
-    renderCharacter cellType addNewLine =
-      if gameOver then "X "
-      else ppCell cellType ++ (if addNewLine then "\n" else "")
+  in intercalate "" values    
 
 
 {-
